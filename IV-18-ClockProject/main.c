@@ -7,7 +7,9 @@
  * One-Wire Library for DS18B20 based on oPossum's code - http://www.43oh.com/forum/viewtopic.php?f=10&t=1425
  * RTC Code based on oPossum's code - http://www.43oh.com/forum/viewtopic.php?f=10&t=2477&p=21670#p21670
  *
- * 9/16/12 - adding alarm functionality
+ * Modified by Alan Barr 2015
+ * With the intention of functioning with mspgcc.
+ *
  */
 #include <stdint.h>
 #include <msp430.h>
