@@ -8,6 +8,13 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
+#include <stdint.h>
+
+/* Enables (1) / Disables (0) temperature measurement and display. */
+#define TEMPERATURE_ENABLED 0
+
+
+
 #define SCL_PIN BIT5 //CLK pin for Max6921
 #define SDA_PIN BIT7  //DIN pin for MAX6921
 #define VFD_CS_PIN BIT0 //CS line for the MAX6921
@@ -23,12 +30,23 @@
 
 
 //feature pins - both on Port 1
-#define BUZ_PIN BIT3
-#define ONEWIRE_PIN BIT4
+#define BUZ_PIN             BIT3
+#define ONEWIRE_PIN         BIT4
 
-#define BUZ_OFF P1OUT &= ~BUZ_PIN
-#define BUZ_ON P1OUT |= BUZ_PIN
-#define BUZ_TOGGLE P1OUT |= BUZ_PIN
+#define BUZ_OFF             P1OUT &= ~BUZ_PIN
+#define BUZ_ON              P1OUT |= BUZ_PIN
+#define BUZ_TOGGLE          P1OUT |= BUZ_PIN
+
+/* LEDS */
+#define LED_RED_PIN         BIT0
+#define LED_RED_ON()        P1OUT |=  LED_RED_PIN
+#define LED_RED_OFF()       P1OUT &= ~LED_RED_PIN
+#define LED_RED_TOG()       P1OUT ^=  LED_RED_PIN
+
+#define LED_GREEN_PIN       BIT6
+#define LED_GREEN_ON()      P1OUT |=  LED_GREEN_PIN
+#define LED_GREEN_OFF()     P1OUT &= ~LED_GREEN_PIN
+#define LED_GREEN_TOG()     P1OUT ^=  LED_GREEN_PIN
 
 struct btm time;
 
@@ -42,9 +60,11 @@ const int alarm_off_time = 100;
 volatile char alarm_duration = 0; //how much longer to sound the alarm
 char alarm_snooze = 0;
 
+#if TEMPERATURE_ENABLED
 //temperature defines and variables
 volatile char take_temp = 0; //indicates that we should read the temperature
 int temp_c, temp_c_1, temp_c_2, temp_f, temp_c_last;
+#endif
 
 //Function Prototypes
 void initSPI();
@@ -66,11 +86,11 @@ void Time_ChangeValue(char add);
 void Alarm_InitSettings();
 void Alarm_SettingTick();
 void Alarm_DisplayAlarms();
-void displayAlarm(char alarm_num, char display_type);
+void displayAlarm(uint8_t alarm_num, char display_type);
 void Alarm_ChangeSetting();
 void Alarm_TickSetting(); //executes every second
 void Alarm_ChangeValue(char add);
-void setScreen(char index, char value, char override);
+void setScreen(uint8_t index, char value, char override);
 void alarm_off();
 int read_block(unsigned char *d, unsigned len);
 void display_temp(int n, char override,char type);
@@ -99,7 +119,7 @@ char tempMode = 1; //0 = celsius, 1 = fahrenheit
 char settings_mode = 0;
 volatile char setting_place = 0;  //with multiple settings, keeps track of which we're on
 volatile char allow_repeat = 0; //if 1, holding down the button will increment values quickly
-volatile char alarm_index = 0; //allows iterating through alarms in settings mode
+volatile uint8_t alarm_index = 0; //allows iterating through alarms in settings mode
 
 volatile char screen[] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
 volatile char screenOR[] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};

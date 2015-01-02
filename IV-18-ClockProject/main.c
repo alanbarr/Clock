@@ -9,21 +9,36 @@
  *
  * 9/16/12 - adding alarm functionality
  */
-#include "msp430.h"
+#include <stdint.h>
+#include <msp430.h>
+
 #include "font.h"
 #include "time.h"
 #include "main.h"  //look at this file for pin definitions, etc
+
+#if TEMPERATURE_ENABLED
 #include "one_wire.h"
+#endif
+
+#ifdef __GNUC__
+#include "legacymsp430.h"
+#endif
 
 #define DEBUGTX //Enables serial debugging of printed text if defined
 //#define NOXTAL //Enables running the clock without the 32.768 crystal - less accurate
+//
+#ifdef __GNUC__
+#define DELAY_CYCLES(x) __delay_cycles(x)
+#else
+#define DELAY_CYCLES(x) _delay_cycles(x)
+#endif
 
 volatile char TXBuffer[8];
 volatile char TXBufferLen = 0;
 volatile char RXBuffer[20];
 
 
-void main(void) {
+int main(void) {
 	WDTCTL = WDTPW + WDTHOLD;                 // Stop watchdog timer
 
 	//initial values for time - incrementing the year would take a long time :)
@@ -45,7 +60,8 @@ void main(void) {
 	BCSCTL3 = XT2S_0 + LFXT1S_0 + XCAP_3;
 	P1OUT = 0x02;
 	P1DIR |= 0x02;
-	P1DIR |= BIT0; //enable use of LED
+
+	P1DIR |= LED_GREEN_PIN | LED_RED_PIN; //enable use of LEDS
 
 	VFD_BLANK_ON; //blank display for startup
 
@@ -58,12 +74,14 @@ void main(void) {
 
 	//clear display
 	write(0x00,0x00);
-	_delay_cycles(10000); //wait for boost to bring up voltage
+	DELAY_CYCLES(10000); //wait for boost to bring up voltage
 	VFD_BLANK_OFF;//starting writes, turn display on
 
+#if TEMPERATURE_ENABLED
 	one_wire_setup(&P1DIR, &P1IN, ONEWIRE_PIN, 16);
 	owex(0, 0);									// Reset
 	owex(0x33, 8);	// Read ROM
+#endif
 	//unsigned char b[16];
 	//int tc;
 
@@ -79,6 +97,7 @@ void main(void) {
 
 	__bis_SR_register(LPM0_bits | GIE);       //enable interrupts
 	for(;;) {
+#if TEMPERATURE_ENABLED
 		if(take_temp)
 		{
 			temp_c = GetTemp();
@@ -103,9 +122,11 @@ void main(void) {
 			P1OUT &= ~BIT0;
 			take_temp = 0;
 		}
+#endif
 		__bis_SR_register(LPM0_bits | GIE);       //enable interrupts
-		//__delay_cycles(800000);
+		//DELAY_CYCLES(800000);
 	}
+    return 0;
 }
 
 //Sets refresh rate for display
@@ -187,7 +208,7 @@ void initSPI()
 
 
 	//IE2 |= UCB0RXIE;                          // Enable RX interrupt
-	_delay_cycles(5000);
+	DELAY_CYCLES(5000);
 }
 
 //Configure interrupts on buttons
@@ -337,10 +358,13 @@ void switchMode(char newMode)
 	{
 		clearDisplay(1);
 		displayORString("Temp", 4,8);
+        /* AB TODO tidy better */
+#if TEMPERATURE_ENABLED
 		if (tempMode == 0)
 			display_temp(temp_c,0,'C');
 		else
 			display_temp(temp_f,0,'F');
+#endif
 	}
 	else if (DisplayMode == ModeText)
 	{
@@ -384,10 +408,14 @@ void clearDisplay(char buffer)
 /*
  *  Screen refresh timer interrupt
  */
+#ifndef __GNUC__
 #pragma vector=TIMER0_A0_VECTOR
 __interrupt void TIMER0_A0_ISR(void)
+#else
+interrupt(TIMER0_A0_VECTOR) TIMER0_A0_ISR(void)
+#endif
 {
-	static char digit = 0;
+	static uint8_t digit = 0;
 	char toDisplay;
 	if(overrideTime > 0)
 		toDisplay = screenOR[digit];
@@ -407,8 +435,12 @@ __interrupt void TIMER0_A0_ISR(void)
  * Serial TX interrupt
  *
  */
+#ifndef __GNUC__
 #pragma vector=USCIAB0TX_VECTOR
 __interrupt void USCI0TX_ISR(void)
+#else
+interrupt(USCIAB0TX_VECTOR) USCI0TX_ISR(void)
+#endif
 {
 #ifdef DEBUGTX
 	RunSerialTX();//trigger transmission of next character, if any
@@ -417,7 +449,7 @@ __interrupt void USCI0TX_ISR(void)
 #ifdef DEBUGTX
 void RunSerialTX()
 {
-	static char TXIndex = 0;
+	static uint8_t TXIndex = 0;
 	if (TXBufferLen > 0 && TXBufferLen < 90) //values above 90 used for other purposes
 	{
 		IE2 |= UCA0TXIE;                        // Enable USCI_A0 TX interrupt
@@ -450,12 +482,16 @@ void RunSerialTX()
  * Planned use - RX from GPS,
  * PC or connected device to set time, change settings, etc.
  */
+#ifndef __GNUC__
 #pragma vector=USCIAB0RX_VECTOR
 __interrupt void USCI0RX_ISR(void)
+#else 
+interrupt(USCIAB0RX_VECTOR) USCI0RX_ISR(void)
+#endif
 {
 	//TODO - add some sort of timeout for serial commands
 	static char inputState = 0;
-	static char bufferIndex = 0;
+	static uint8_t bufferIndex = 0;
 	char rx = UCA0RXBUF;
 	if (inputState == 0) //ready to rcv a command
 	{
@@ -549,20 +585,25 @@ __interrupt void USCI0RX_ISR(void)
  * one quarter second timer interrupt (250ms)
  * used for RTC functions, button reading and debouncing and alarm checks
  */
+#ifndef __GNUC__
 #pragma vector=TIMER1_A0_VECTOR
 __interrupt void TIMER1_A0_ISR(void)
+#else 
+interrupt(TIMER1_A0_VECTOR) TIMER1_A0_ISR(void)
+#endif
 {
 	static unsigned int last_sec = 99;
 	if (overrideTime > 0)
 		overrideTime--;
 	static char count = 0; //how many intervals - 4 = 1s
 
-
 	count++;
 	if (count == 4)
 	{
 		rtc_tick_bcd(&time);
-		if (DisplayMode == ModeTime & (settings_mode == 0 | (settings_mode == 1 & (setting_place >= 1 & setting_place <= 3))))
+		if (DisplayMode == ModeTime &&
+            (settings_mode == 0 ||
+             (settings_mode == 1 && (setting_place >= 1 && setting_place <= 3))))
 		{
 			displayTime(&time);
 
@@ -592,7 +633,7 @@ __interrupt void TIMER1_A0_ISR(void)
 				screen[6] ^= 1;//toggle dots off and on every second
 			}
 		}
-		else if (DisplayMode == ModeAlarm & settings_mode == 1)
+		else if (DisplayMode == ModeAlarm && settings_mode == 1)
 		{
 			Alarm_SettingTick();
 		}
@@ -678,11 +719,11 @@ __interrupt void TIMER1_A0_ISR(void)
 					Alarm_DisplayAlarms();
 			}
 		}
-		else if (settings_mode == 1 & S2_Time > 1) //short press toggles through settings
+		else if (settings_mode == 1 && S2_Time > 1) //short press toggles through settings
 		{
 
 		}
-		else if (settings_mode == 0 & S2_Time > 1) //short press, normal mode
+		else if (settings_mode == 0 && S2_Time > 1) //short press, normal mode
 		{
 			if (DisplayMode == ModeTime)
 			{
@@ -691,7 +732,7 @@ __interrupt void TIMER1_A0_ISR(void)
 				overrideTime = 8;
 			}
 		}
-		if (settings_mode == 1 & S2_Time > 1) //in settings mode and a button was pressed
+		if (settings_mode == 1 && S2_Time > 1) //in settings mode and a button was pressed
 		{
 			//go through settings place by mode
 			if (DisplayMode == ModeTime)
@@ -711,9 +752,9 @@ __interrupt void TIMER1_A0_ISR(void)
 		S3_Time++;
 		alarm_off();
 	}
-	if ((P2IN & S3_PIN) != 0 | (S3_Time > 0 & allow_repeat == 1)) //using an if here to allow holding down the button
+	if ((P2IN & S3_PIN) != 0 || (S3_Time > 0 && allow_repeat == 1)) //using an if here to allow holding down the button
 	{
-		if (settings_mode == 1 & S3_Time > 0)
+		if (settings_mode == 1 && S3_Time > 0)
 		{
 			if(DisplayMode == ModeTime)
 			{
@@ -724,14 +765,17 @@ __interrupt void TIMER1_A0_ISR(void)
 				Alarm_ChangeValue(1);
 			}
 		}
-		else if (settings_mode == 0 & S3_Time > 0)
+		else if (settings_mode == 0 && S3_Time > 0)
 		{
 			if(DisplayMode == ModeTime)
 			{
+                /* AB TODO tidy up */
+#if TEMPERATURE_ENABLED
 				if (tempMode == 0)
 					display_temp(temp_c,1,'C');
 				else
 					display_temp(temp_f,1,'F');
+#endif
 			}
 		}
 
@@ -744,10 +788,13 @@ __interrupt void TIMER1_A0_ISR(void)
 	{
 		last_sec = time.sec;
 		//take temperature every 30 seconds
-		if (time.sec == 0x30 | time.sec == 0x00)
+		if (time.sec == 0x30 || time.sec == 0x00)
 		{
+#if TEMPERATURE_ENABLED 
 			take_temp = 1;
-			P1OUT |= BIT0;  //turn on LED - indicate we're taking the temperature
+		    //turn on LED - indicate we're taking the temperature
+            LED_RED_ON();
+#endif
 			LPM0_EXIT;
 		}
 	}
@@ -777,7 +824,7 @@ void Alarm_ChangeSetting()
 		}
 		else if (alarm_index == 99) //just dropped into settings mode
 		{
-			setting_place == 0;//basically doing nothing
+			setting_place = 0;//basically doing nothing
 			alarm_index = 0;
 		}
 		else
@@ -1160,7 +1207,7 @@ void Time_ChangeValue(char add)
 //TODO - having trouble finding length of array - clean up later
 void displayString(char * c, char len)
 {
-	char index = 1;
+	uint8_t index = 1;
 	while(index - 1 < len) //as long as there are more characters, and we aren't past the edge of our display
 	{
 		//char toDisp = ;
@@ -1171,9 +1218,9 @@ void displayString(char * c, char len)
 //set an override string and display time
 void displayORString(char * c, char len, char time)
 {
-	char index = 1;
+	uint8_t index = 1;
 	clearDisplay(1);
-	while(index - 1 < len & index -1 < 9) //as long as there are more characters, and we aren't past the edge of our display
+	while((index - 1) < len && (index -1 < 9)) //as long as there are more characters, and we aren't past the edge of our display
 	{
 		char toDisp = *c++;
 #ifdef DEBUGTX
@@ -1191,11 +1238,11 @@ void displayORString(char * c, char len, char time)
 }
 char translateChar(char c)
 {
-	if (c >= 97 & c <= 122) //lowercase letters
+	if (c >= 97 && c <= 122) //lowercase letters
 		return alphatable[c - 97];
-	else if (c >= 65 & c <= 90) //uppercase letters - use same table
+	else if (c >= 65 && c <= 90) //uppercase letters - use same table
 		return alphatable[c - 65];
-	else if (c >= 48 & c <= 57) //numbers
+	else if (c >= 48 && c <= 57) //numbers
 		return numbertable[c - 48];
 	else if (c == 32) //space
 		return 0x00;
@@ -1221,7 +1268,7 @@ void displayDate(struct btm *t, char override)
 	setScreen(8, numbertable[(t->year & 0x000F)],override);
 }
 
-void setScreen(char index, char value, char override)
+void setScreen(uint8_t index, char value, char override)
 {
 	if (override)
 		screenOR[index] = value;
@@ -1256,6 +1303,7 @@ void Alarm_DisplayAlarms()
 	}
 }
 
+#if TEMPERATURE_ENABLED
 int read_block(unsigned char *d, unsigned len)
 {
 	while(len--) {
@@ -1263,11 +1311,13 @@ int read_block(unsigned char *d, unsigned len)
 	}
 	return 0;
 }
+#endif
 
 void display_temp(int n, char override, char type)
 {
 	clearDisplay(override);
-	char index = 0, temp = 0;
+	uint8_t index = 0;
+    uint8_t temp = 0;
 	char toDisplay_tmp[8];
 	for (temp = 0; temp < 8; temp++)
 		toDisplay_tmp[temp] = ' ';
@@ -1334,7 +1384,7 @@ void display_temp(int n, char override, char type)
 	}
 }
 
-void displayAlarm(char alarm_num, char display_type)
+void displayAlarm(uint8_t alarm_num, char display_type)
 {
 	clearDisplay(0);
 	if (display_type == 0) //time only
@@ -1445,13 +1495,15 @@ void Alarm_SettingTick()
 			break;
 	}
 }
+
+#if TEMPERATURE_ENABLED
 //Reads the temperature from the DS18B20
 int GetTemp()
 {
 	unsigned char b[16];
 	int return_val;
 	owex(0, 0); owex(0x44CC, 16);						// Convert
-	__delay_cycles(800000);								// Wait for conversion to complete
+	DELAY_CYCLES(800000);								// Wait for conversion to complete
 	owex(0, 0); owex(0xBECC, 16);						// Read temperature
 	read_block(b, 9);
 	//return_val = b[1]; return_val <<= 8; return_val |= b[0];
@@ -1463,6 +1515,7 @@ int GetTemp()
 	//tc = 0x01; tc <<= 8; tc |= b[0];
 	return return_val;
 }
+#endif
 
 void ProcessRX(char transLength)
 {
@@ -1475,28 +1528,31 @@ void ProcessRX(char transLength)
 		case 'T':
 			if (commandLength >= 4) //hours provided
 			{
-				char h1, h2;
-				if (RXBuffer[2] >= 48 & RXBuffer[2] <= 57) //ascii 0-9
+				char h1=0;
+                char h2=0;
+				if (RXBuffer[2] >= 48 && RXBuffer[2] <= 57) //ascii 0-9
 					h1 = RXBuffer[2] - 48;
-				if (RXBuffer[3] >= 48 & RXBuffer[3] <= 57) //ascii 0-9
+				if (RXBuffer[3] >= 48 && RXBuffer[3] <= 57) //ascii 0-9
 					h2 = RXBuffer[3] - 48;
 				time.hour = h1<<4 | h2;
 			}
 			if(commandLength >= 6) //minutes
 			{
-				char m1, m2;
-				if (RXBuffer[4] >= 48 & RXBuffer[4] <= 57) //ascii 0-9
+				char m1=0;
+                char m2=0;
+				if (RXBuffer[4] >= 48 && RXBuffer[4] <= 57) //ascii 0-9
 					m1 = RXBuffer[4] - 48;
-				if (RXBuffer[5] >= 48 & RXBuffer[5] <= 57) //ascii 0-9
+				if (RXBuffer[5] >= 48 && RXBuffer[5] <= 57) //ascii 0-9
 					m2 = RXBuffer[5] - 48;
 				time.min = m1<<4 | m2;
 			}
 			if(commandLength >= 8) //seconds
 			{
-				char s1, s2;
-				if (RXBuffer[6] >= 48 & RXBuffer[6] <= 57) //ascii 0-9
+				char s1=0;
+                char s2=0;
+				if (RXBuffer[6] >= 48 && RXBuffer[6] <= 57) //ascii 0-9
 					s1 = RXBuffer[6] - 48;
-				if (RXBuffer[7] >= 48 & RXBuffer[7] <= 57) //ascii 0-9
+				if (RXBuffer[7] >= 48 && RXBuffer[7] <= 57) //ascii 0-9
 					s2 = RXBuffer[7] - 48;
 				time.sec = s1<<4 | s2;
 			}

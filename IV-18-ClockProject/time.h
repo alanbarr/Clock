@@ -22,9 +22,9 @@ struct btm                                              // BCD time structure
 
 struct alarm_bcd
 {
-	unsigned int min;
-	unsigned int hour;
-	char daysOfWeek; //allows selection of specific days
+    unsigned int min;
+    unsigned int hour;
+    char daysOfWeek; //allows selection of specific days
 };
 
 
@@ -57,7 +57,21 @@ static const unsigned short dim[18][2] = {                 // Number of days in 
         0,      0,                                      // 0F
         0x30,   0x30,                                   // 10 November
         0x31,   0x31                                    // 11 December
-    };
+};
+
+/* Thanks to user kff2 on the 43oh.com forums for this implementation. */
+#ifdef __GNUC__
+static inline unsigned short _bcd_add_short(register unsigned short bcd_a,
+										    register unsigned short bcd_b)
+{
+    __asm__(
+	    " clrc \n"
+	    " dadd %[bcd_b],%[bcd_a] \n"
+	    : [bcd_a] "+ro" (bcd_a)
+	    : [bcd_b] "g" (bcd_b));
+    return bcd_a;
+}
+#endif
 
 void rtc_tick_bcd(struct btm *t)
 {
@@ -67,7 +81,7 @@ void rtc_tick_bcd(struct btm *t)
     if(t->sec > 0x59) {                                 // Check for overflow
         t->sec = 0;                                     // Reset seconds
         t->min =  _bcd_add_short(t->min, 1);            // Increment minutes
-        t->time_change = 1;								// Minutes have change
+        t->time_change = 1;                             // Minutes have change
         if(t->min > 0x59) {                             // Check for overflow
             t->min = 0;                                 // Reset minutes
             t->hour = _bcd_add_short(t->hour, 1);       // Increment hours
@@ -94,15 +108,15 @@ void rtc_tick_bcd(struct btm *t)
                                        //
 char check_alarm(struct btm *t, volatile struct alarm_bcd *a)
 {
-	//check day of the week first
-	if (1<<t->wday & a->daysOfWeek)
-	{
-		if (t->hour == a->hour)
-			if(t->min == a->min)
-				return 1;
-	}
-	//if we don't satisfy any of the alarm conditions
-	return 0;
+    //check day of the week first
+    if (1<<t->wday & a->daysOfWeek)
+    {
+        if (t->hour == a->hour)
+            if(t->min == a->min)
+                return 1;
+    }
+    //if we don't satisfy any of the alarm conditions
+    return 0;
 }
 
 
