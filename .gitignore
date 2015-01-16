@@ -1,7 +1,8 @@
-lnk*.cmd
+*.cmd
 *.ccxml
 *.ccsproject
 *.project
 *.prefs
 *.cproject
-Debug/
+
+src/output

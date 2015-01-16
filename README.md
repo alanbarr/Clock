@@ -22,4 +22,8 @@ http://forum.43oh.com/topic/2487-siv-18-vfd-clock-booster-pack/
 * Get temperature working with mspgcc.
 * Some general tidying.
 * Do something about build warnings in time.h regarding 2D array.
-
+* Look into splitting up main.c into smaller files.
+* Shift logic out of ISR's to normal code.
+* Find out why warning: multi-character character constant [-Wmultichar] was
+  not being given for the degree? symbol in translateChar before it was moved.
+* Remove override screen in favour of x amount of extra screens.

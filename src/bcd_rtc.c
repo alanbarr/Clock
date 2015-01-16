@@ -1,35 +1,10 @@
 /*
- * time.c
  *  Huge thanks to oPossum from 43oh.com!  http://www.43oh.com/forum/viewtopic.php?f=10&t=2477&p=21670#p21670
  */
 
-#ifndef TIME_H_
-#define TIME_H_
+#include "bcd_rtc.h"
 
-
-struct btm                                              // BCD time structure
-{
-    unsigned int sec;
-    unsigned int min;
-    unsigned int hour;
-    unsigned int wday;
-    unsigned int mday;
-    unsigned int yday;
-    unsigned int mon;
-    unsigned int year;
-    char time_change; //indicates what values have changed
-};
-
-struct alarm_bcd
-{
-    unsigned int min;
-    unsigned int hour;
-    char daysOfWeek; //allows selection of specific days
-};
-
-
-
-unsigned is_leap_year_bcd(unsigned year)
+uint8_t bcdIsLeapYear(unsigned year)
 {
     if(year & 3) return 0;
     switch(year & 0x03FF) {
@@ -38,7 +13,8 @@ unsigned is_leap_year_bcd(unsigned year)
     return 1;
 }
 
-static const unsigned short dim[18][2] = {                 // Number of days in month for non-leap year and leap year
+/*AB TODO uint8_t */
+const uint8_t bcdDim[18][2] = {              // Number of days in month for non-leap year and leap year
         0x31,   0x31,                                   // 00 January
         0x28,   0x29,                                   // 01 February
         0x31,   0x31,                                   // 02 March
@@ -59,24 +35,23 @@ static const unsigned short dim[18][2] = {                 // Number of days in 
         0x31,   0x31                                    // 11 December
 };
 
-/* Thanks to user kff2 on the 43oh.com forums for this implementation. */
+/* Thanks to user kff2 on the 43oh.com forums for this implementation.
+ * http://forum.43oh.com/topic/2487-siv-18-vfd-clock-booster-pack/page-10#entry28674 */
 #ifdef __GNUC__
-static inline unsigned short _bcd_add_short(register unsigned short bcd_a,
-										    register unsigned short bcd_b)
+inline unsigned short _bcd_add_short(register unsigned short bcd_a,
+                                     register unsigned short bcd_b)
 {
     __asm__(
-	    " clrc \n"
-	    " dadd %[bcd_b],%[bcd_a] \n"
-	    : [bcd_a] "+ro" (bcd_a)
-	    : [bcd_b] "g" (bcd_b));
+        " clrc \n"
+        " dadd %[bcd_b],%[bcd_a] \n"
+        : [bcd_a] "+ro" (bcd_a)
+        : [bcd_b] "g" (bcd_b));
     return bcd_a;
 }
 #endif
 
-void rtc_tick_bcd(struct btm *t)
+void bcdRtcTick(struct btm *t)
 {
-                                                      //
-                                                        //
     t->sec = _bcd_add_short(t->sec, 1);                 // Increment seconds
     if(t->sec > 0x59) {                                 // Check for overflow
         t->sec = 0;                                     // Reset seconds
@@ -92,7 +67,7 @@ void rtc_tick_bcd(struct btm *t)
                 if(t->wday > 0x06)                      // Check for overflow
                     t->wday = 0;                        // Reset day of week
                 t->mday = _bcd_add_short(t->mday, 1);   // Increment day of month, check for overflow
-                if(t->mday > dim[t->mon][is_leap_year_bcd(t->year)]) {
+                if(t->mday > bcdDim[t->mon][bcdIsLeapYear(t->year)]) {
                     t->mday = 0x01;                     // Reset day of month
                     t->mon = _bcd_add_short(t->mon, 1); // Increment month
                     if(t->mon > 0x11) {                 // Check for overflow
@@ -105,21 +80,5 @@ void rtc_tick_bcd(struct btm *t)
         }                                               // - hour
     }                                                   // - minute
 }                                                       //
-                                       //
-char check_alarm(struct btm *t, volatile struct alarm_bcd *a)
-{
-    //check day of the week first
-    if (1<<t->wday & a->daysOfWeek)
-    {
-        if (t->hour == a->hour)
-            if(t->min == a->min)
-                return 1;
-    }
-    //if we don't satisfy any of the alarm conditions
-    return 0;
-}
 
 
-
-
-#endif /* TIME_H_ */
