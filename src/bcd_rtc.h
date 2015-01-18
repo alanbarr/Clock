@@ -6,24 +6,21 @@
 
 struct btm                                              // BCD time structure
 {
-    /* AB TODO change where possible to uint8_t */
-    unsigned int sec;
-    unsigned int min;
-    unsigned int hour;
-    unsigned int wday;
-    unsigned int mday;
-    unsigned int yday;
-    unsigned int mon;
-    unsigned int year;
-    char time_change; //indicates what values have changed
+    uint8_t sec;
+    uint8_t min;
+    uint8_t hour;
+    uint8_t wday;
+    uint8_t mday;
+    uint8_t yday;
+    uint8_t mon;
+    uint16_t year;
 };
 
 struct alarm_bcd
 {
-    /* AB TODO change where possible to uint8_t */
-    unsigned int min;
-    unsigned int hour;
-    char daysOfWeek; //allows selection of specific days
+    uint8_t min;
+    uint8_t hour;
+    uint8_t daysOfWeek; //allows selection of specific days
 };
 
 uint8_t bcdIsLeapYear(unsigned year);

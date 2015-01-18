@@ -35,11 +35,11 @@ static volatile eDisplayMode displayMode = ModeTime;
 static volatile uint8_t bufferPlace = 0;
 /* Should always be a value of HOUR_MODE_* define */
 uint8_t hourMode = HOUR_MODE_DEFAULT;
-char settings_mode = 0;
+static uint8_t settingsMode = 0;
 /* with multiple settings, keeps track of which we're on */
-volatile char setting_place = 0;  
+volatile char settingPlace = 0;
 /* if 1, holding down the button will increment values quickly*/
-volatile char allow_repeat = 0;  
+volatile char allowRepeat = 0;
 
 /* Function Prototypes */
 static void displayTimerInit(void);
@@ -50,9 +50,9 @@ static void timeChangeSetting(void);
 static void timeChangeValue(char add);
 static void uartInit(void);
 static inline void uartRxIsr(void);
-void displayTime(struct btm *t);
-void displayDate(struct btm *t, char override);
-void displayWeekday(unsigned int wday);
+static void displayDate(struct btm *t, uint8_t emphasise, uint8_t override);
+static void displayTime(struct btm *t, uint8_t emphasise);
+static void displayWeekday(unsigned int wday);
 
 #if 0
 static volatile char CustomMsg[20] = {'4','3','o','h','.','c','o','m',' ','r','u','l','e','z',0,0,0,0,0,0};
@@ -61,13 +61,13 @@ static volatile char CustomMsgLen = 14;
 
 int main(void) 
 {
-    WDTCTL = WDTPW + WDTHOLD;                 // Stop watchdog timer
+    WDTCTL = WDTPW + WDTHOLD;
 
     //initial values for time - incrementing the year would take a long time :)
-    time.year = 0x2012;
+    time.year = 0x2015;
     time.mday = 0x01;
 
-#if XTAL
+#if XTAL_PRESENT
     //setting up clocks - 16mhz, using external crystal
     BCSCTL2 = SELM_0 + DIVM_0 + DIVS_2;
 #else
@@ -121,6 +121,16 @@ int main(void)
 
     __bis_SR_register(LPM0_bits | GIE);
 
+#if DEBUGTX
+    uartTxBuffer[0] = 'D';
+    uartTxBuffer[1] = 'E';
+    uartTxBuffer[2] = 'B';
+    uartTxBuffer[3] = 'U';
+    uartTxBuffer[4] = 'G';
+    uartTxBufferLen = 5;
+    uartTx();
+#endif
+
     while (1)
     {
 #if TEMPERATURE_ENABLED
@@ -138,7 +148,7 @@ int main(void)
 
             temp_f = temp_c * 9 / 5 + (512);
 
-            if (settings_mode == 0 && displayMode == ModeTemp)
+            if (settingsMode == 0 && displayMode == ModeTemp)
             {
                 if (tempUnit == 0)
                     tempDisplay(temp_c,0,'C');
@@ -160,7 +170,7 @@ static void displayTimerInit(void)
 {
     TA0CCTL0 = CM_0 + CCIS_0 + OUTMOD_0 + CCIE;
     TA0CTL = TASSEL_2 + ID_3 + MC_1;
-#if XTAL
+#if XTAL_PRESENT
     //Refresh rate when we're using the crystal
     TA0CCR0 = 1000; //you can change the refresh rate by changing this value
 #else
@@ -176,7 +186,7 @@ static void clockTimerInit(void)
 {
     //Init timer
     TA1CCTL0 = CM_0 + CCIS_0 + OUTMOD_0 + CCIE;
-#if XTAL
+#if XTAL_PRESENT
     //using ACLK as source, divided by 4
     TA1CCR0 = 255;
     TA1CTL = TASSEL_1 + ID_2 + MC_1;
@@ -198,7 +208,7 @@ static void uartInit(void)
     UCA0CTL1 |= UCSWRST;
     UCA0CTL1 = UCSSEL_2 + UCSWRST;
 
-#if XTAL
+#if XTAL_PRESENT
     //Serial settings when we're using the crystal
     UCA0MCTL = UCBRF_0 + UCBRS_6;
     UCA0BR0 = 160;
@@ -211,7 +221,7 @@ static void uartInit(void)
 
     UCA0CTL1 &= ~UCSWRST;
     IE2 |= UCA0RXIE;    // Enable USCI_A0 RX interrupt
-    IE2 |= UCA0TXIE;    //enable TX interrupt for buffering
+    IE2 |= UCA0TXIE;    // Enable TX interrupt for buffering
 }
 
 //Configure interrupts on buttons
@@ -220,7 +230,7 @@ static void peripheralsInit(void)
     P2DIR &= ~(S1_PIN|S2_PIN|S3_PIN);
     P2REN |=  (S1_PIN|S2_PIN|S3_PIN);
 
-#if XTAL == false
+#if XTAL_PRESENT == false
     P2SEL &= ~(BIT6 + BIT7); //turn off for xtal pins
 #endif
 
@@ -233,30 +243,30 @@ static void peripheralsInit(void)
 /*
  * Writes the day of week out to the display
  */
-void displayWeekday(unsigned int wday)
+static void displayWeekday(unsigned int wday)
 {
     switch(wday)
     {
-        case 0x0:
-            vfdDisplayString("Sun",3);
-            break;
-        case 0x1:
+        case 0:
             vfdDisplayString("Mon",3);
             break;
-        case 0x2:
+        case 1:
             vfdDisplayString("Tue",3);
             break;
-        case 0x3:
+        case 2:
             vfdDisplayString("Wed",3);
             break;
-        case 0x4:
+        case 3:
             vfdDisplayString("Thu",3);
             break;
-        case 0x5:
+        case 4:
             vfdDisplayString("Fri",3);
             break;
-        case 0x6:
+        case 5:
             vfdDisplayString("Sat",3);
+            break;
+        case 6:
+            vfdDisplayString("Sun",3);
             break;
         default:
             vfdDisplayString("err",3);
@@ -267,48 +277,67 @@ void displayWeekday(unsigned int wday)
 /*
  * Displays the current time for display
  */
-void displayTime(struct btm *t)
+static void displayTime(struct btm *t, uint8_t emphasise)
 {
     if (hourMode == HOUR_MODE_12) //subtract 12 before displaying hour
     {
         if (t->hour == 0x12)
         {
-            screen[1] = numberTable[(t->hour & 0xF0)>>4];
-            screen[2] = numberTable[(t->hour & 0x0F)];
+            screen[SCREEN_HR_POS] = numberTable[(t->hour & 0xF0)>>4];
+            screen[SCREEN_HR_POS+1] = numberTable[(t->hour & 0x0F)];
             screen[0] |= BIT0;//turn on dot
         }
         else if (t->hour == 0)
         {
-            screen[1] = numberTable[1];
-            screen[2] = numberTable[2];
+            screen[SCREEN_HR_POS] = numberTable[1];
+            screen[SCREEN_HR_POS+1] = numberTable[2];
             screen[0] &= ~BIT0;//turn off dot
         }
         else if (t->hour > 0x12)
         {
             unsigned int localHour = 0;
             localHour = _bcd_add_short(t->hour, 0x9988);
-            screen[1] = numberTable[(localHour & 0xF0)>>4];
-            screen[2] = numberTable[(localHour & 0x0F)];
+            screen[SCREEN_HR_POS] = numberTable[(localHour & 0xF0)>>4];
+            screen[SCREEN_HR_POS+1] = numberTable[(localHour & 0x0F)];
             screen[0] |= BIT0;//turn on dot
         }
         else
         {
-            screen[1] = numberTable[(t->hour & 0xF0)>>4];
-            screen[2] = numberTable[(t->hour & 0x0F)];
+            screen[SCREEN_HR_POS] = numberTable[(t->hour & 0xF0)>>4];
+            screen[SCREEN_HR_POS+1] = numberTable[(t->hour & 0x0F)];
             screen[0] &= ~BIT0;//turn off dot
         }
     }
     else
     {
-        screen[1] = numberTable[(t->hour & 0xF0)>>4];
-        screen[2] = numberTable[(t->hour & 0x0F)];
+        screen[SCREEN_HR_POS] = numberTable[(t->hour & 0xF0)>>4];
+        screen[SCREEN_HR_POS+1] = numberTable[(t->hour & 0x0F)];
         screen[0] &= ~BIT0;//turn off dot
     }
 
-    screen[4] = numberTable[(t->min & 0xF0)>>4];
-    screen[5] = numberTable[(t->min & 0x0F)];
-    screen[7] = numberTable[(t->sec & 0xF0)>>4];
-    screen[8] = numberTable[(t->sec & 0x0F)];
+    screen[SCREEN_MIN_POS] = numberTable[(t->min & 0xF0)>>4];
+    screen[SCREEN_MIN_POS+1] = numberTable[(t->min & 0x0F)];
+    screen[SCREEN_SEC_POS] = numberTable[(t->sec & 0xF0)>>4];
+    screen[SCREEN_SEC_POS+1] = numberTable[(t->sec & 0x0F)];
+ 
+    switch (emphasise)
+    {
+        case SETTINGS_HOUR:
+            screen[SCREEN_HR_POS]   |= 1;
+            screen[SCREEN_HR_POS+1] |= 1;
+            break;
+        case SETTINGS_MIN:
+            screen[SCREEN_MIN_POS]   |= 1;
+            screen[SCREEN_MIN_POS+1] |= 1;
+            break;
+        case SETTINGS_SEC:
+            screen[SCREEN_SEC_POS]   |= 1;
+            screen[SCREEN_SEC_POS+1] |= 1;
+            break;
+        default:
+            break;
+    }
+
 }
 
 /*
@@ -318,6 +347,7 @@ static void switchMode(char newMode)
 {
     bufferPlace = 0;
     displayMode = newMode;
+
     if (displayMode == ModeTime)
     {
         vfdDisplayClear(1);
@@ -359,6 +389,7 @@ interrupt(TIMER0_A0_VECTOR) TIMER0_A0_ISR(void)
 {
     static uint8_t digit = 0;
     char toDisplay;
+    
     if (overrideTime > 0)
         toDisplay = screenOR[digit];
     else
@@ -388,11 +419,11 @@ interrupt(USCIAB0TX_VECTOR) USCI0TX_ISR(void)
 #endif
 }
 
-
 #if DEBUGTX
 void uartTx(void)
 {
     static uint8_t TXIndex = 0;
+
     if (uartTxBufferLen > 0 && uartTxBufferLen < 90) //values above 90 used for other purposes
     {
         IE2 |= UCA0TXIE;                        // Enable USCI_A0 TX interrupt
@@ -419,6 +450,7 @@ void uartTx(void)
         TXIndex = 0;
 }
 #endif
+
 /*
  * Serial RX interrupt
  * Planned use - RX from GPS,
@@ -434,6 +466,7 @@ interrupt(USCIAB0RX_VECTOR) USCI0RX_ISR(void)
     //TODO - add some sort of timeout for serial commands
     static char inputState = 0;
     char rx = UCA0RXBUF;
+
     if (inputState == 0) //ready to rcv a command
     {
         if (rx == '$') //beginning of a transmission
@@ -546,15 +579,15 @@ interrupt(TIMER1_A0_VECTOR) TIMER1_A0_ISR(void)
     {
         bcdRtcTick(&time);
         if (displayMode == ModeTime &&
-            (settings_mode == 0 ||
-             (settings_mode == 1 && (setting_place >= 1 && setting_place <= 3))))
+            (settingsMode == 0 ||
+             (settingsMode == 1 && (settingPlace >= 1 && settingPlace <= 3))))
         {
-            displayTime(&time);
+            displayTime(&time, 0);
             
-            if (settings_mode == 1)
+            if (settingsMode == 1)
             {
                 //set dots based on current setting location
-                switch (setting_place)
+                switch (settingPlace)
                 {
                     case 1:
                         screen[1] |= 1;
@@ -576,7 +609,7 @@ interrupt(TIMER1_A0_VECTOR) TIMER1_A0_ISR(void)
                 screen[6] ^= 1;//toggle dots off and on every second
             }
         }
-        else if (displayMode == ModeAlarm && settings_mode == 1)
+        else if (displayMode == ModeAlarm && settingsMode == 1)
         {
             alarmSettingTick();
         }
@@ -617,14 +650,14 @@ interrupt(TIMER1_A0_VECTOR) TIMER1_A0_ISR(void)
     {
         if (S1_Time > 1)
         {
-            if (settings_mode == 0) //change mode
+            if (settingsMode == 0) //change mode
             {
                 uint8_t NextMode = displayMode + 1;
                 if(NextMode >= ModeMax)
                     NextMode = 0;
                 vfdDisplayClear(0);
                 switchMode(NextMode);
-                settings_mode = 0;
+                settingsMode = 0;
             }
             else //in settings mode, this becomes decrement
             {
@@ -645,41 +678,41 @@ interrupt(TIMER1_A0_VECTOR) TIMER1_A0_ISR(void)
     {
         if (S2_Time > 6) //a nice long press will drop us in or out of settings mode
         {
-            if (settings_mode == 0)
+            if (settingsMode == 0)
             {
-                settings_mode = 1;
-                setting_place = 0;//move to the first setting
+                settingsMode = 1;
+                settingPlace = 0;//move to the first setting
                 alarmIndex = 99;
                 if (displayMode == ModeAlarm)
                     alarmSettingsInit();
             }
-            else if (settings_mode == 1) //exit settings mode
+            else if (settingsMode == 1) //exit settings mode
             {
                 vfdDisplayClear(0);
-                settings_mode = 0;
+                settingsMode = 0;
                 if(displayMode == ModeAlarm)
                     alarmDisplayAlarms();
             }
         }
-        else if (settings_mode == 1 && S2_Time > 1) //short press toggles through settings
+        else if (settingsMode == 1 && S2_Time > 1) //short press toggles through settings
         {
 
         }
-        else if (settings_mode == 0 && S2_Time > 1) //short press, normal mode
+        else if (settingsMode == 0 && S2_Time > 1) //short press, normal mode
         {
             if (displayMode == ModeTime)
             {
                 //2sec - display date
-                displayDate(&time, 1);
+                displayDate(&time,0,1);
                 overrideTime = 8;
             }
         }
-        if (settings_mode == 1 && S2_Time > 1) //in settings mode and a button was pressed
+        if (settingsMode == 1 && S2_Time > 1) //in settings mode and a button was pressed
         {
             //go through settings place by mode
             if (displayMode == ModeTime)
             {
-                setting_place++;
+                settingPlace++;
                 timeChangeSetting();
             }
             else if (displayMode == ModeAlarm)
@@ -696,9 +729,9 @@ interrupt(TIMER1_A0_VECTOR) TIMER1_A0_ISR(void)
         alarmOff();
     }
 
-    if ((P2IN & S3_PIN) != 0 || (S3_Time > 0 && allow_repeat == 1)) //using an if here to allow holding down the button
+    if ((P2IN & S3_PIN) != 0 || (S3_Time > 0 && allowRepeat == 1)) //using an if here to allow holding down the button
     {
-        if (settings_mode == 1 && S3_Time > 0)
+        if (settingsMode == 1 && S3_Time > 0)
         {
             if (displayMode == ModeTime)
             {
@@ -709,7 +742,7 @@ interrupt(TIMER1_A0_VECTOR) TIMER1_A0_ISR(void)
                 alarmChangeValue(1);
             }
         }
-        else if (settings_mode == 0 && S3_Time > 0)
+        else if (settingsMode == 0 && S3_Time > 0)
         {
             if (displayMode == ModeTime)
             {
@@ -755,61 +788,48 @@ interrupt(TIMER1_A0_VECTOR) TIMER1_A0_ISR(void)
      */
 static void timeChangeSetting(void)
 {
-    allow_repeat = 0;
-    switch (setting_place)
+    allowRepeat = 0;
+    switch (settingPlace)
     {
-        case 1: //hour
+        case SETTINGS_HOUR:
             vfdDisplayClear(0);
             vfdDisplayORString("Set Time",8,8);
-            allow_repeat = (char)0x1;
-            displayTime(&time);
-            screen[1] |= 1;
-            screen[2] |= 1;
+            allowRepeat = 0x1;
+            displayTime(&time, SETTINGS_HOUR);
             break;
-        case 2: //minute
+        case SETTINGS_MIN:
             vfdDisplayClear(0);
-            allow_repeat = 1;
-            displayTime(&time);
-            screen[4] |= 1;
-            screen[5] |= 1;
+            allowRepeat = 1;
+            displayTime(&time, SETTINGS_MIN);
             break;
-        case 3: //seconds
+        case SETTINGS_SEC:
             vfdDisplayClear(0);
-            allow_repeat = 1;
-            displayTime(&time);
-            screen[7] |= 1;
-            screen[8] |= 1;
+            allowRepeat = 1;
+            displayTime(&time, SETTINGS_SEC);
             break;
-        case 4: //Month
+        case SETTINGS_MONTH:
             vfdDisplayClear(0);
-            vfdDisplayORString("Set Date",8,8);
-            displayDate(&time,0);
-            screen[1] |= 1;
-            screen[2] |= 1;
-            allow_repeat = 1;
+            displayDate(&time,SETTINGS_MONTH,0);
+            allowRepeat = 1;
             break;
-        case 5: //day
+        case SETTINGS_DAY:
             vfdDisplayClear(0);
-            displayDate(&time,0);
-            screen[4] |= 1;
-            screen[5] |= 1;
-            allow_repeat = 1;
+            displayDate(&time,SETTINGS_DAY,0);
+            allowRepeat = 1;
             break;
-        case 6: //Year
+        case SETTINGS_YEAR:
             vfdDisplayClear(0);
-            displayDate(&time,0);
-            screen[7] |= 1;
-            screen[8] |= 1;
-            //allow_repeat = 1;
+            displayDate(&time,SETTINGS_YEAR,0);
+            //allowRepeat = 1;
             break;
-        case 7: //Weekday
+        case SETTINGS_WK_DAY:
             vfdDisplayClear(0);
             vfdDisplayORString("Set DOW",7,8);
             displayWeekday(time.wday);
-            //allow_repeat = 1;
+            //allowRepeat = 1;
             break;
         default: //24/12h - 0 or over last setting
-            setting_place = 0; //reset in case setting # went past highest
+            settingPlace = 0; //reset in case setting # went past highest
             vfdDisplayClear(0);
             vfdDisplayORString("Hr Mode",7,8);
             if (hourMode == 0) //24h
@@ -823,12 +843,14 @@ static void timeChangeSetting(void)
             break;
     }
 }
+
 static void timeChangeValue(char add)
 {
     short daysInMonth = bcdDim[time.mon][bcdIsLeapYear(time.year)];
-    switch(setting_place)
+
+    switch(settingPlace)
     {
-        case 1://hour
+        case SETTINGS_HOUR:
             vfdDisplayClear(0);
             if (add)
             {
@@ -842,11 +864,9 @@ static void timeChangeValue(char add)
                 if (time.hour > 0x23)
                     time.hour = 0x23;
             }
-            displayTime(&time);
-            screen[1] |= 1;
-            screen[2] |= 1;
+            displayTime(&time, SETTINGS_HOUR);
             break;
-        case 2://minute
+        case SETTINGS_MIN:
             vfdDisplayClear(0);
             if(add)
             {
@@ -862,11 +882,9 @@ static void timeChangeValue(char add)
                     time.min = 0x59;
                 time.sec = 0x00;
             }
-            displayTime(&time);
-            screen[4] |= 1;
-            screen[5] |= 1;
+            displayTime(&time, SETTINGS_MIN);
             break;
-        case 3://second
+        case SETTINGS_SEC:
             vfdDisplayClear(0);
             if (add)
             {
@@ -876,15 +894,11 @@ static void timeChangeValue(char add)
             }
             else
             {
-                time.sec = _bcd_add_short(time.sec, 0x9999);
-                if (time.sec > 0x59)
-                    time.sec = 0x59;
+                time.sec = 0;
             }
-            displayTime(&time);
-            screen[7] |= 1;
-            screen[8] |= 1;
+            displayTime(&time, SETTINGS_SEC);
             break;
-        case 4: //Month
+        case SETTINGS_MONTH:
             vfdDisplayClear(0);
             if(add)
             {
@@ -898,11 +912,9 @@ static void timeChangeValue(char add)
                 if (time.mon > 0x11)
                     time.mon = 0x11;
             }
-            displayDate(&time,0);
-            screen[1] |= 1;
-            screen[2] |= 1;
+            displayDate(&time,SETTINGS_MONTH,0);
             break;
-        case 5: //day
+        case SETTINGS_DAY:
             vfdDisplayClear(0);
             if (add)
             {
@@ -916,11 +928,9 @@ static void timeChangeValue(char add)
                 if (time.mday == 0) //detect wrap
                     time.mday = daysInMonth;
             }
-            displayDate(&time,0);
-            screen[4] |= 1;
-            screen[5] |= 1;
+            displayDate(&time,SETTINGS_DAY,0);
             break;
-        case 6: //Year
+        case SETTINGS_YEAR:
             vfdDisplayClear(0);
             if (add)
             {
@@ -934,11 +944,9 @@ static void timeChangeValue(char add)
                 if (time.year < 0x2000)
                     time.year = 0x2099;
             }
-            displayDate(&time,0);
-            screen[7] |= 1;
-            screen[8] |= 1;
+            displayDate(&time,SETTINGS_YEAR,0);
             break;
-        case 7: //Weekday
+        case SETTINGS_WK_DAY:
             vfdDisplayClear(0);
             if (add)
             {
@@ -970,19 +978,37 @@ static void timeChangeValue(char add)
     }
 }
 
-
 //Handles display formatting for a date
-void displayDate(struct btm *t, char override)
+static void displayDate(struct btm *t, uint8_t emphasise, uint8_t override)
 {
-    unsigned int month = _bcd_add_short(t->mon,1);//month is 0-11
-    vfdSetScreen(1, numberTable[(month & 0x00F0)>>4],override);
-    vfdSetScreen(2, numberTable[(month & 0x000F)],override);
+    uint8_t month = _bcd_add_short(t->mon,1);//month is 0-11
+
+    vfdSetScreen(SCREEN_DAY_POS, numberTable[(t->mday & 0x00F0)>>4],override);
+    vfdSetScreen(SCREEN_DAY_POS+1, numberTable[(t->mday & 0x000F)],override);
     vfdSetScreen(3, specialTable[0],override);
-    vfdSetScreen(4, numberTable[(t->mday & 0x00F0)>>4],override);
-    vfdSetScreen(5, numberTable[(t->mday & 0x000F)],override);
+    vfdSetScreen(SCREEN_MON_POS, numberTable[(month & 0x00F0)>>4],override);
+    vfdSetScreen(SCREEN_MON_POS+1, numberTable[(month & 0x000F)],override);
     vfdSetScreen(6, specialTable[0],override);
-    vfdSetScreen(7, numberTable[(t->year & 0x00F0)>>4],override);
-    vfdSetScreen(8, numberTable[(t->year & 0x000F)],override);
+    vfdSetScreen(SCREEN_YEAR_POS, numberTable[(t->year & 0x00F0)>>4],override);
+    vfdSetScreen(SCREEN_YEAR_POS+1, numberTable[(t->year & 0x000F)],override);
+
+    switch (emphasise)
+    {
+        case SETTINGS_DAY:
+            screen[SCREEN_DAY_POS]   |= 1;
+            screen[SCREEN_DAY_POS+1] |= 1;
+            break;
+        case SETTINGS_MONTH:
+            screen[SCREEN_MON_POS]   |= 1;
+            screen[SCREEN_MON_POS+1] |= 1;
+            break;
+        case SETTINGS_YEAR:
+            screen[SCREEN_YEAR_POS]   |= 1;
+            screen[SCREEN_YEAR_POS+1] |= 1;
+            break;
+        default:
+            break;
+    }
 }
 
 /* UART Rx handling. Called from ISR */
@@ -990,8 +1016,10 @@ static inline void uartRxIsr(void)
 {
     char inputType = 0;
     char commandLength = uartRxBufferLen - 1;
+
     if (uartRxBufferLen > 2)
         inputType = uartRxBuffer[1];//first character after $ is transmission type
+
     switch (inputType)
     {
         case 'T':

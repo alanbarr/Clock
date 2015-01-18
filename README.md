@@ -15,14 +15,12 @@ The VFD clock booster pack is available for purchase as:
 * [A bare PCB on Tindie.](
    https://www.tindie.com/products/cubeberg/iv-18-vfd-clock-bare-pcb-launchpad-booster/)
 
-Documentation, assembly instructions, etc. can be found here:
-http://forum.43oh.com/topic/2487-siv-18-vfd-clock-booster-pack/
+Documentation, assembly instructions, etc. can be found [here](
+http://forum.43oh.com/topic/2487-siv-18-vfd-clock-booster-pack/).
 
 ## TODO
 * Get temperature working with mspgcc.
-* Some general tidying.
 * Do something about build warnings in time.h regarding 2D array.
-* Look into splitting up main.c into smaller files.
 * Shift logic out of ISR's to normal code.
 * Find out why warning: multi-character character constant [-Wmultichar] was
   not being given for the degree? symbol in translateChar before it was moved.

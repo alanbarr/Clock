@@ -3,15 +3,15 @@
 /********** Configuration parameters **********/
 
 /* Enables (true) / Disables (false) temperature measurement and display. */
-#define TEMPERATURE_ENABLED         false /* AB TODO mspgcc it. */
+#define TEMPERATURE_ENABLED         false
 
-/* Enables serial debugging of printed text if true*/
+/* Enables serial debugging of printed text if true. */
 #define DEBUGTX                     true
 
 /* If set to true the clock uses the optional 32.768 kHz crystal on the launchpad
  * to track the time. If set to false time keeping is done internally, which is
  * less accurate */
-#define XTAL                        true
+#define XTAL_PRESENT                true
 
 /* Number of alarms */
 #define NUM_ALARMS                  2
@@ -25,17 +25,34 @@
 /* Default hour mode */
 #define HOUR_MODE_DEFAULT           HOUR_MODE_24
 
+/* Default date display */
+#define DATE_DISPLAY_DEFAULT        DATE_DISPLAY_DEFAULT_DDMMYY
+
 /********** End of Configuration parameters **********/
+
+/* TEMPERATURE_UNIT_DEFAULT */
+#define TEMP_UNIT_CELSIUS           0
+#define TEMP_UNIT_FAHRENHEIT        0
+
+/* HOUR_MODE_DEFAULT */
+#define HOUR_MODE_24                0
+#define HOUR_MODE_12                1
+
+/* DATE_DISPLAY_DEFAULT */
+#define DATE_DISPLAY_DEFAULT_DDMMYY 0
+#define DATE_DISPLAY_DEFAULT_MMDDYY 1
+#define DATE_DISPLAY_DEFAULT_ISO    2
+
 
 /******************** Pin Setup ********************/  
 #define UART_RX_PIN                 BIT1
 #define UART_TX_PIN                 BIT2
 
-#define SCL_PIN                     BIT5 //CLK pin for Max6921
-#define SDA_PIN                     BIT7  //DIN pin for MAX6921
+#define SCL_PIN                     BIT5    //CLK pin for Max6921
+#define SDA_PIN                     BIT7    //DIN pin for MAX6921
 
-#define VFD_CS_PIN                  BIT0 //CS line for the MAX6921
-#define VFD_BLANK_PIN               BIT1 //Blank pin for Max6921 - active high
+#define VFD_CS_PIN                  BIT0    //CS line for the MAX6921
+#define VFD_BLANK_PIN               BIT1    //Blank pin for Max6921 - active high
 
 /* Button defines */
 #define S1_PIN                      BIT5

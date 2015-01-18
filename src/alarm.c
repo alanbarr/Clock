@@ -31,7 +31,7 @@ void alarmSettingsInit(void)
 {
     vfdDisplayClear(1);
     vfdDisplayORString("alarms",6,4);
-    setting_place = 0;
+    settingPlace = 0;
     alarmDisplayAlarms();
 }
 
@@ -120,7 +120,7 @@ static void alarmDisplay(uint8_t alarm_num, char display_type)
 //gets fired once a second - lets us blink items when in settings mode
 void alarmSettingTick(void)
 {
-    switch(setting_place)
+    switch(settingPlace)
     {
         case 0:
             screen[alarmIndex + 1] ^= numberTable[alarmIndex+1];
@@ -174,7 +174,7 @@ uint8_t alarmCheck(struct btm *t, volatile struct alarm_bcd *a)
 
 void alarmChangeValue(char add)
 {
-    switch (setting_place)
+    switch (settingPlace)
     {
         case 1: //add to hour
             vfdDisplayClear(0);
@@ -262,59 +262,59 @@ void alarmChangeValue(char add)
      */
 void alarmSettingChange(void)
 {
-    if(setting_place == 0)
+    if(settingPlace == 0)
     {
         if (alarmIndex >= (NUM_ALARMS - 1) && alarmIndex < 99)
         {
             alarmIndex = 0;
-            setting_place++;//move on to next setting now that we've covered the alarm enable
+            settingPlace++;//move on to next setting now that we've covered the alarm enable
         }
         else if (alarmIndex == 99) //just dropped into settings mode
         {
-            setting_place = 0;//basically doing nothing
+            settingPlace = 0;//basically doing nothing
             alarmIndex = 0;
         }
         else
             alarmIndex++;
 
     }
-    else if(setting_place == 9)
+    else if(settingPlace == 9)
     {
         if(alarmIndex == NUM_ALARMS - 1)
         {
-            setting_place = 0;
+            settingPlace = 0;
             alarmIndex = 0;
         }
         else
         {
-            setting_place = 1;
+            settingPlace = 1;
             alarmIndex++;
         }
     }
     else
     {
-        setting_place++;
+        settingPlace++;
     }
-    if (setting_place == 1)
+    if (settingPlace == 1)
     {
         vfdDisplayClear(1);
         vfdDisplayORString("alarm ", 6, 8);
         screenOR[7] = numberTable[alarmIndex + 1];
     }
-    allow_repeat = 0;
-    switch(setting_place)
+    allowRepeat = 0;
+    switch(settingPlace)
     {
         case 0:
             alarmDisplayAlarms();
             break;
         case 1:
-            allow_repeat = 1;
+            allowRepeat = 1;
             alarmDisplay(alarmIndex, 0);
             screen[1] |= 1;
             screen[2] |= 1;
             break;
         case 2:
-            allow_repeat = 1;
+            allowRepeat = 1;
             alarmDisplay(alarmIndex, 0);
             screen[4] |= 1;
             screen[5] |= 1;

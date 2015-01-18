@@ -56,7 +56,9 @@ void bcdRtcTick(struct btm *t)
     if(t->sec > 0x59) {                                 // Check for overflow
         t->sec = 0;                                     // Reset seconds
         t->min =  _bcd_add_short(t->min, 1);            // Increment minutes
-        t->time_change = 1;                             // Minutes have change
+#if 0
+        t->timeChange = 1;                              // Minutes have change
+#endif
         if(t->min > 0x59) {                             // Check for overflow
             t->min = 0;                                 // Reset minutes
             t->hour = _bcd_add_short(t->hour, 1);       // Increment hours

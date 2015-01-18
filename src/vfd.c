@@ -159,7 +159,7 @@ void vfdDisplayORString(char * c, char len, char time)
     {
         char toDisp = *c++;
 #if DEBUGTX
-        uartTxBuffer[index- 1] = toDisp;
+        uartTxBuffer[index-1] = toDisp;
 #endif
         screenOR[index] = vfdTranslateChar(toDisp);
         index++;
