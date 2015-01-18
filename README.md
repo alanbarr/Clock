@@ -25,5 +25,3 @@ http://forum.43oh.com/topic/2487-siv-18-vfd-clock-booster-pack/).
 * Find out why warning: multi-character character constant [-Wmultichar] was
   not being given for the degree? symbol in translateChar before it was moved.
 * Remove override screen in favour of x amount of extra screens.
-* Change first day of week to Monday? or make it configurable.
-* Change date format to dd/mm/yy or make it configurable.
